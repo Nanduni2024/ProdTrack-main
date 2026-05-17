@@ -137,6 +137,9 @@ img {
 
 .story-rail {
   align-self: start;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 112px);
   min-height: calc(100vh - 112px);
   padding: 16px;
   position: sticky;
@@ -182,6 +185,23 @@ img {
 .article-list {
   display: grid;
   gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-color: var(--sage) #eee9de;
+  scrollbar-width: thin;
+}
+
+.article-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.article-list::-webkit-scrollbar-thumb {
+  background: var(--sage);
+}
+
+.article-list::-webkit-scrollbar-track {
+  background: #eee9de;
 }
 
 .article-card {
@@ -197,6 +217,10 @@ img {
 .article-card:hover {
   background: var(--panel);
   border-color: var(--line);
+}
+
+.article-card.active {
+  box-shadow: inset 4px 0 0 var(--brick);
 }
 
 .article-card strong {
@@ -218,11 +242,52 @@ img {
   text-transform: uppercase;
 }
 
+.sync-badge {
+  align-items: center;
+  background: #edf1eb;
+  border: 1px solid #d5ddcf;
+  color: #435348;
+  display: flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+  line-height: 1.35;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+.editor-status {
+  margin-top: -4px;
+}
+
 .story-stage {
   background: var(--panel);
   border: 1px solid var(--line);
   min-height: calc(100vh - 112px);
   overflow: hidden;
+}
+
+.empty-state {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: grid;
+  justify-items: center;
+  min-height: calc(100vh - 112px);
+  padding: 48px;
+  text-align: center;
+}
+
+.empty-state h1 {
+  font-size: 44px;
+  margin-bottom: 0;
+}
+
+.empty-state p {
+  color: var(--muted);
+  font-size: 18px;
+  margin: 8px 0 0;
+  max-width: 460px;
 }
 
 .hero-image {
@@ -416,6 +481,11 @@ textarea:focus {
   padding: 0 18px;
 }
 
+.publish-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .admin-list {
   align-self: start;
   display: grid;
@@ -472,12 +542,14 @@ textarea:focus {
   }
 
   .story-rail {
+    max-height: none;
     min-height: auto;
     position: static;
   }
 
   .article-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 420px;
   }
 }
 
@@ -491,6 +563,10 @@ textarea:focus {
   .split-fields,
   .article-list {
     grid-template-columns: 1fr;
+  }
+
+  .article-list {
+    max-height: 360px;
   }
 
   .topbar {

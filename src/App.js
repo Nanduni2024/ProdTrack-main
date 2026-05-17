@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   BookOpen,
   CalendarDays,
+  Cloud,
   Eye,
   Feather,
   ImagePlus,
@@ -16,6 +17,11 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "prodtrack_articles";
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
+const SUPABASE_ARTICLES_ENDPOINT = SUPABASE_URL
+  ? `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/articles`
+  : "";
 
 const starterArticles = [
   {
@@ -68,6 +74,71 @@ function getStoredArticles() {
   }
 }
 
+function saveStoredArticles(articles) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(articles));
+  } catch {
+    // Uploaded base64 images can exceed browser storage. Cloud storage is preferred for production.
+  }
+}
+
+function cloudStorageEnabled() {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+function normalizeArticle(article) {
+  return {
+    id: article.id,
+    title: article.title,
+    category: article.category,
+    author: article.author,
+    excerpt: article.excerpt,
+    body: article.body,
+    image: article.image,
+    createdAt: article.createdAt || article.created_at,
+    readTime: article.readTime || article.read_time,
+    featured: Boolean(article.featured)
+  };
+}
+
+function toSupabaseArticle(article) {
+  return {
+    id: article.id,
+    title: article.title,
+    category: article.category,
+    author: article.author,
+    excerpt: article.excerpt,
+    body: article.body,
+    image: article.image,
+    created_at: article.createdAt,
+    read_time: article.readTime,
+    featured: article.featured
+  };
+}
+
+async function requestSupabase(path = "", options = {}) {
+  const response = await fetch(`${SUPABASE_ARTICLES_ENDPOINT}${path}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...(options.headers || {})
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase request failed with ${response.status}`);
+  }
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
 function formatDate(value) {
   return new Intl.DateTimeFormat("en", {
     month: "short",
@@ -89,9 +160,40 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPin, setAdminPin] = useState("");
+  const [storageStatus, setStorageStatus] = useState(
+    cloudStorageEnabled() ? "Connecting to cloud articles..." : "Local browser storage"
+  );
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(articles));
+    if (!cloudStorageEnabled()) return;
+
+    let ignore = false;
+
+    async function loadCloudArticles() {
+      try {
+        const data = await requestSupabase("?select=*&order=created_at.desc");
+        if (ignore) return;
+        const nextArticles = data.map(normalizeArticle);
+        setArticles(nextArticles.length ? nextArticles : starterArticles);
+        setSelectedId(nextArticles[0]?.id || starterArticles[0].id);
+        setStorageStatus("Cloud sync active");
+      } catch {
+        if (!ignore) {
+          setStorageStatus("Cloud unavailable, using this browser");
+        }
+      }
+    }
+
+    loadCloudArticles();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    saveStoredArticles(articles);
   }, [articles]);
 
   const filteredArticles = useMemo(() => {
@@ -115,12 +217,18 @@ function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 1500000) {
+      setStorageStatus("Please upload an image smaller than 1.5 MB");
+      event.target.value = "";
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => updateField("image", reader.result);
     reader.readAsDataURL(file);
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
     if (!form.title.trim() || !form.body.trim()) return;
 
@@ -137,13 +245,39 @@ function App() {
       featured: articles.length === 0
     };
 
+    setIsSaving(true);
+
+    if (cloudStorageEnabled()) {
+      try {
+        await requestSupabase("", {
+          method: "POST",
+          body: JSON.stringify(toSupabaseArticle(article))
+        });
+        setStorageStatus("Article published to cloud");
+      } catch {
+        setStorageStatus("Cloud save failed, saved in this browser");
+      }
+    }
+
     setArticles((current) => [article, ...current]);
     setSelectedId(article.id);
     setMode("reader");
     setForm(emptyForm);
+    setIsSaving(false);
   }
 
-  function deleteArticle(id) {
+  async function deleteArticle(id) {
+    if (cloudStorageEnabled()) {
+      try {
+        await requestSupabase(`?id=eq.${encodeURIComponent(id)}`, {
+          method: "DELETE"
+        });
+        setStorageStatus("Article deleted from cloud");
+      } catch {
+        setStorageStatus("Cloud delete failed, removed in this browser");
+      }
+    }
+
     setArticles((current) => current.filter((article) => article.id !== id));
     if (selectedId === id) {
       setSelectedId(articles.find((article) => article.id !== id)?.id || "");
@@ -187,6 +321,7 @@ function App() {
           query={query}
           selectedArticle={selectedArticle}
           selectedId={selectedArticle?.id}
+          storageStatus={storageStatus}
           setQuery={setQuery}
           setSelectedId={setSelectedId}
         />
@@ -196,6 +331,8 @@ function App() {
             <AdminView
               articles={articles}
               form={form}
+              isSaving={isSaving}
+              storageStatus={storageStatus}
               deleteArticle={deleteArticle}
               handleImageUpload={handleImageUpload}
               handleSubmit={handleSubmit}
@@ -254,7 +391,15 @@ function AdminLogin({ adminPin, setAdminPin, unlock }) {
   );
 }
 
-function ReaderView({ articles, query, selectedArticle, selectedId, setQuery, setSelectedId }) {
+function ReaderView({
+  articles,
+  query,
+  selectedArticle,
+  selectedId,
+  storageStatus,
+  setQuery,
+  setSelectedId
+}) {
   return (
     <section className="reader-grid">
       <aside className="story-rail">
@@ -272,6 +417,11 @@ function ReaderView({ articles, query, selectedArticle, selectedId, setQuery, se
           <strong>{articles.length}</strong>
         </div>
 
+        <div className="sync-badge">
+          <Cloud size={16} />
+          <span>{storageStatus}</span>
+        </div>
+
         <div className="article-list">
           {articles.map((article) => (
             <button
@@ -287,7 +437,7 @@ function ReaderView({ articles, query, selectedArticle, selectedId, setQuery, se
         </div>
       </aside>
 
-      {selectedArticle && (
+      {selectedArticle ? (
         <motion.article
           className="story-stage"
           key={selectedArticle.id}
@@ -321,6 +471,12 @@ function ReaderView({ articles, query, selectedArticle, selectedId, setQuery, se
             <p className="article-body">{selectedArticle.body}</p>
           </div>
         </motion.article>
+      ) : (
+        <section className="empty-state">
+          <BookOpen size={34} />
+          <h1>No articles found</h1>
+          <p>Try another search term or publish a new article from the admin area.</p>
+        </section>
       )}
     </section>
   );
@@ -329,6 +485,8 @@ function ReaderView({ articles, query, selectedArticle, selectedId, setQuery, se
 function AdminView({
   articles,
   form,
+  isSaving,
+  storageStatus,
   deleteArticle,
   handleImageUpload,
   handleSubmit,
@@ -343,6 +501,11 @@ function AdminView({
             Admin publisher
           </span>
           <strong>Add article</strong>
+        </div>
+
+        <div className="sync-badge editor-status">
+          <Cloud size={16} />
+          <span>{storageStatus}</span>
         </div>
 
         <label>
@@ -407,9 +570,9 @@ function AdminView({
           </div>
         )}
 
-        <button className="publish-button" type="submit">
+        <button className="publish-button" disabled={isSaving} type="submit">
           <Upload size={18} />
-          Publish article
+          {isSaving ? "Publishing..." : "Publish article"}
         </button>
       </form>
 

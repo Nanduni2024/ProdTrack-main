@@ -15,7 +15,38 @@ Open http://localhost:3000 in your browser.
 - Medium-style article reading layout
 - Admin publisher for adding posts (prototype PIN: `prodtrack2026`)
 - Cover image upload for each article
-- Articles saved in browser local storage
+- Cloud article sync with Supabase when configured
+- Local browser storage fallback when cloud settings are missing
 - Responsive desktop and mobile design
 
-Note: this version is frontend-only. For a public production site, connect the admin publisher to a backend database and real authentication.
+## Cloud articles on Vercel
+
+Articles added in one browser only appear on another device after you connect a shared database. The app supports Supabase through Vercel environment variables.
+
+Create a Supabase table named `articles` with these columns:
+
+```sql
+create table articles (
+  id text primary key,
+  title text not null,
+  category text,
+  author text,
+  excerpt text,
+  body text not null,
+  image text,
+  created_at timestamptz not null,
+  read_time text,
+  featured boolean default false
+);
+```
+
+For this prototype, enable Row Level Security policies that allow public `select`, `insert`, and `delete` for the `articles` table. Then add these Vercel environment variables:
+
+```text
+REACT_APP_SUPABASE_URL=your_supabase_project_url
+REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+Redeploy on Vercel after adding the variables.
+
+Note: the admin PIN is a frontend prototype guard, not production-grade security. For a real public writing platform, replace it with backend authentication and private image storage.
