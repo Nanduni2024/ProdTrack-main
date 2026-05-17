@@ -260,6 +260,36 @@ img {
   margin-top: -4px;
 }
 
+.portable-actions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portable-actions button,
+.portable-actions label {
+  align-items: center;
+  background: #f4f0e7;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  min-height: 44px;
+  padding: 0 12px;
+  position: relative;
+  text-transform: none;
+}
+
+.portable-actions input {
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+}
+
 .story-stage {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -566,6 +596,7 @@ textarea:focus {
   .topbar,
   .nav-actions,
   .split-fields,
+  .portable-actions,
   .article-list {
     grid-template-columns: 1fr;
   }

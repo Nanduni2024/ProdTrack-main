@@ -25,6 +25,19 @@ Articles added in one browser only appear on another device after you connect a 
 
 Vercel hosts the React website. Supabase stores the articles so laptop and phone visitors see the same posts.
 
+## Move existing local posts
+
+If you already created posts before adding Supabase, those posts are saved only in that browser. To move them:
+
+1. Open the site on the browser that shows the posts.
+2. Go to Admin.
+3. Click `Export posts`.
+4. Open the site on another device or browser.
+5. Go to Admin.
+6. Click `Import posts` and choose the exported JSON file.
+
+After Supabase is configured, importing posts also syncs them to the cloud.
+
 Create a Supabase table named `articles` with these columns:
 
 ```sql

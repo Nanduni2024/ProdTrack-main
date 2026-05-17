@@ -4,8 +4,10 @@ import {
   BookOpen,
   CalendarDays,
   Cloud,
+  Download,
   Eye,
   Feather,
+  FileUp,
   ImagePlus,
   LayoutDashboard,
   Plus,
@@ -286,6 +288,64 @@ function App() {
     }
   }
 
+  function handleExportArticles() {
+    const exportData = JSON.stringify(articles, null, 2);
+    const blob = new Blob([exportData], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = `prodtrack-posts-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setStorageStatus("Posts exported from this browser");
+  }
+
+  async function handleImportArticles(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const importedText = await file.text();
+      const importedArticles = JSON.parse(importedText).map(normalizeArticle);
+      const articleMap = new Map();
+
+      [...importedArticles, ...articles].forEach((article) => {
+        if (article?.id && article?.title && article?.body) {
+          articleMap.set(article.id, article);
+        }
+      });
+
+      const nextArticles = Array.from(articleMap.values()).sort(
+        (first, second) => new Date(second.createdAt) - new Date(first.createdAt)
+      );
+
+      if (cloudStorageEnabled()) {
+        await requestSupabase("", {
+          method: "POST",
+          headers: {
+            Prefer: "resolution=merge-duplicates,return=representation"
+          },
+          body: JSON.stringify(importedArticles.map(toSupabaseArticle))
+        });
+      }
+
+      setArticles(nextArticles);
+      setSelectedId(nextArticles[0]?.id || "");
+      setStorageStatus(
+        cloudStorageEnabled()
+          ? "Imported posts and synced to cloud"
+          : "Imported posts on this device"
+      );
+    } catch {
+      setStorageStatus("Import failed. Use a ProdTrack posts JSON file.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   return (
     <main className="app-shell">
       <nav className="topbar">
@@ -336,6 +396,8 @@ function App() {
               isSaving={isSaving}
               storageStatus={storageStatus}
               deleteArticle={deleteArticle}
+              handleExportArticles={handleExportArticles}
+              handleImportArticles={handleImportArticles}
               handleImageUpload={handleImageUpload}
               handleSubmit={handleSubmit}
               updateField={updateField}
@@ -490,6 +552,8 @@ function AdminView({
   isSaving,
   storageStatus,
   deleteArticle,
+  handleExportArticles,
+  handleImportArticles,
   handleImageUpload,
   handleSubmit,
   updateField
@@ -508,6 +572,18 @@ function AdminView({
         <div className="sync-badge editor-status">
           <Cloud size={16} />
           <span>{storageStatus}</span>
+        </div>
+
+        <div className="portable-actions">
+          <button type="button" onClick={handleExportArticles}>
+            <Download size={17} />
+            Export posts
+          </button>
+          <label>
+            <FileUp size={17} />
+            Import posts
+            <input accept="application/json" type="file" onChange={handleImportArticles} />
+          </label>
         </div>
 
         <label>
