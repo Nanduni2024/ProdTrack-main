@@ -19,10 +19,10 @@ import {
 } from "lucide-react";
 
 const STORAGE_KEY = "prodtrack_articles";
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
-const SUPABASE_ARTICLES_ENDPOINT = SUPABASE_URL
-  ? `${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/articles`
+const FIREBASE_PROJECT_ID = process.env.REACT_APP_FIREBASE_PROJECT_ID;
+const FIREBASE_API_KEY = process.env.REACT_APP_FIREBASE_API_KEY;
+const FIREBASE_ARTICLES_ENDPOINT = FIREBASE_PROJECT_ID
+  ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/articles`
   : "";
 
 const starterArticles = [
@@ -85,7 +85,7 @@ function saveStoredArticles(articles) {
 }
 
 function cloudStorageEnabled() {
-  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+  return Boolean(FIREBASE_PROJECT_ID && FIREBASE_API_KEY);
 }
 
 function normalizeArticle(article) {
@@ -103,35 +103,54 @@ function normalizeArticle(article) {
   };
 }
 
-function toSupabaseArticle(article) {
+function toFirestoreFields(article) {
   return {
-    id: article.id,
-    title: article.title,
-    category: article.category,
-    author: article.author,
-    excerpt: article.excerpt,
-    body: article.body,
-    image: article.image,
-    created_at: article.createdAt,
-    read_time: article.readTime,
-    featured: article.featured
+    id: { stringValue: article.id || "" },
+    title: { stringValue: article.title || "" },
+    category: { stringValue: article.category || "" },
+    author: { stringValue: article.author || "" },
+    excerpt: { stringValue: article.excerpt || "" },
+    body: { stringValue: article.body || "" },
+    image: { stringValue: article.image || "" },
+    createdAt: { timestampValue: article.createdAt || new Date().toISOString() },
+    readTime: { stringValue: article.readTime || "" },
+    featured: { booleanValue: Boolean(article.featured) }
   };
 }
 
-async function requestSupabase(path = "", options = {}) {
-  const response = await fetch(`${SUPABASE_ARTICLES_ENDPOINT}${path}`, {
+function fromFirestoreDocument(document) {
+  const fields = document.fields || {};
+
+  return normalizeArticle({
+    id: fields.id?.stringValue || document.name?.split("/").pop(),
+    title: fields.title?.stringValue,
+    category: fields.category?.stringValue,
+    author: fields.author?.stringValue,
+    excerpt: fields.excerpt?.stringValue,
+    body: fields.body?.stringValue,
+    image: fields.image?.stringValue,
+    createdAt: fields.createdAt?.timestampValue || fields.createdAt?.stringValue,
+    readTime: fields.readTime?.stringValue,
+    featured: fields.featured?.booleanValue
+  });
+}
+
+function firebaseUrl(path = "") {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${FIREBASE_ARTICLES_ENDPOINT}${path}${separator}key=${FIREBASE_API_KEY}`;
+}
+
+async function requestFirebase(path = "", options = {}) {
+  const response = await fetch(firebaseUrl(path), {
     ...options,
     headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       "Content-Type": "application/json",
-      Prefer: "return=representation",
       ...(options.headers || {})
     }
   });
 
   if (!response.ok) {
-    throw new Error(`Supabase request failed with ${response.status}`);
+    throw new Error(`Firebase request failed with ${response.status}`);
   }
 
   if (response.status === 204) {
@@ -154,6 +173,34 @@ function calculateReadTime(text) {
   return `${Math.max(1, Math.ceil(words / 180))} min read`;
 }
 
+function resizeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = reject;
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onerror = reject;
+      image.onload = () => {
+        const maxSize = 1200;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      };
+
+      image.src = reader.result;
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
 function App() {
   const [articles, setArticles] = useState(getStoredArticles);
   const [query, setQuery] = useState("");
@@ -164,8 +211,8 @@ function App() {
   const [adminPin, setAdminPin] = useState("");
   const [storageStatus, setStorageStatus] = useState(
     cloudStorageEnabled()
-      ? "Connecting to shared cloud articles..."
-      : "This device only. Add Supabase on Vercel to share posts."
+      ? "Connecting to Firebase articles..."
+      : "This device only. Add Firebase on Vercel to share posts."
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -176,15 +223,17 @@ function App() {
 
     async function loadCloudArticles() {
       try {
-        const data = await requestSupabase("?select=*&order=created_at.desc");
+        const data = await requestFirebase("");
         if (ignore) return;
-        const nextArticles = data.map(normalizeArticle);
+        const nextArticles = (data.documents || [])
+          .map(fromFirestoreDocument)
+          .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
         setArticles(nextArticles.length ? nextArticles : starterArticles);
         setSelectedId(nextArticles[0]?.id || starterArticles[0].id);
-        setStorageStatus("Cloud sync active");
+        setStorageStatus("Firebase sync active");
       } catch {
         if (!ignore) {
-          setStorageStatus("Cloud unavailable. Showing this device only.");
+          setStorageStatus("Firebase unavailable. Showing this device only.");
         }
       }
     }
@@ -217,19 +266,27 @@ function App() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function handleImageUpload(event) {
+  async function handleImageUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 1500000) {
-      setStorageStatus("Please upload an image smaller than 1.5 MB");
+    if (file.size > 6000000) {
+      setStorageStatus("Please upload an image smaller than 6 MB");
       event.target.value = "";
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => updateField("image", reader.result);
-    reader.readAsDataURL(file);
+    try {
+      const resizedImage = await resizeImageFile(file);
+      if (resizedImage.length > 900000) {
+        setStorageStatus("Please use a smaller cover image for Firebase");
+        event.target.value = "";
+        return;
+      }
+      updateField("image", resizedImage);
+    } catch {
+      setStorageStatus("Image upload failed. Try another image.");
+    }
   }
 
   async function handleSubmit(event) {
@@ -253,13 +310,13 @@ function App() {
 
     if (cloudStorageEnabled()) {
       try {
-        await requestSupabase("", {
-          method: "POST",
-          body: JSON.stringify(toSupabaseArticle(article))
+        await requestFirebase(`/${encodeURIComponent(article.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ fields: toFirestoreFields(article) })
         });
-        setStorageStatus("Article published to cloud");
+        setStorageStatus("Article published to Firebase");
       } catch {
-        setStorageStatus("Cloud save failed. Saved on this device only.");
+        setStorageStatus("Firebase save failed. Saved on this device only.");
       }
     }
 
@@ -273,12 +330,12 @@ function App() {
   async function deleteArticle(id) {
     if (cloudStorageEnabled()) {
       try {
-        await requestSupabase(`?id=eq.${encodeURIComponent(id)}`, {
+        await requestFirebase(`/${encodeURIComponent(id)}`, {
           method: "DELETE"
         });
-        setStorageStatus("Article deleted from cloud");
+        setStorageStatus("Article deleted from Firebase");
       } catch {
-        setStorageStatus("Cloud delete failed. Removed on this device only.");
+        setStorageStatus("Firebase delete failed. Removed on this device only.");
       }
     }
 
@@ -323,20 +380,21 @@ function App() {
       );
 
       if (cloudStorageEnabled()) {
-        await requestSupabase("", {
-          method: "POST",
-          headers: {
-            Prefer: "resolution=merge-duplicates,return=representation"
-          },
-          body: JSON.stringify(importedArticles.map(toSupabaseArticle))
-        });
+        await Promise.all(
+          importedArticles.map((article) =>
+            requestFirebase(`/${encodeURIComponent(article.id)}`, {
+              method: "PATCH",
+              body: JSON.stringify({ fields: toFirestoreFields(article) })
+            })
+          )
+        );
       }
 
       setArticles(nextArticles);
       setSelectedId(nextArticles[0]?.id || "");
       setStorageStatus(
         cloudStorageEnabled()
-          ? "Imported posts and synced to cloud"
+          ? "Imported posts and synced to Firebase"
           : "Imported posts on this device"
       );
     } catch {

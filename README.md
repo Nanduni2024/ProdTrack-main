@@ -15,19 +15,19 @@ Open http://localhost:3000 in your browser.
 - Medium-style article reading layout
 - Admin publisher for adding posts (prototype PIN: `prodtrack2026`)
 - Cover image upload for each article
-- Cloud article sync with Supabase when configured
+- Cloud article sync with Firebase Firestore when configured
 - Local browser storage fallback when cloud settings are missing
 - Responsive desktop and mobile design
 
-## Cloud articles on Vercel
+## Cloud articles with Firebase
 
-Articles added in one browser only appear on another device after you connect a shared database. The app supports Supabase through Vercel environment variables.
+Articles added in one browser only appear on another device after you connect a shared database. The app supports Firebase Firestore through Vercel environment variables.
 
-Vercel hosts the React website. Supabase stores the articles so laptop and phone visitors see the same posts.
+Vercel hosts the React website. Firebase Firestore stores the articles so laptop and phone visitors see the same posts.
 
 ## Move existing local posts
 
-If you already created posts before adding Supabase, those posts are saved only in that browser. To move them:
+If you already created posts before adding Firebase, those posts are saved only in that browser. To move them:
 
 1. Open the site on the browser that shows the posts.
 2. Go to Admin.
@@ -36,32 +36,35 @@ If you already created posts before adding Supabase, those posts are saved only 
 5. Go to Admin.
 6. Click `Import posts` and choose the exported JSON file.
 
-After Supabase is configured, importing posts also syncs them to the cloud.
+After Firebase is configured, importing posts also syncs them to Firestore.
 
-Create a Supabase table named `articles` with these columns:
+## Firebase setup
 
-```sql
-create table articles (
-  id text primary key,
-  title text not null,
-  category text,
-  author text,
-  excerpt text,
-  body text not null,
-  image text,
-  created_at timestamptz not null,
-  read_time text,
-  featured boolean default false
-);
-```
-
-For this prototype, enable Row Level Security policies that allow public `select`, `insert`, and `delete` for the `articles` table. Then add these Vercel environment variables:
+1. Go to Firebase Console.
+2. Create a project.
+3. Add a Web app.
+4. Create a Firestore database.
+5. Create a collection named `articles`.
+6. In Vercel, add these Environment Variables:
 
 ```text
-REACT_APP_SUPABASE_URL=your_supabase_project_url
-REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key
+REACT_APP_FIREBASE_PROJECT_ID=your_firebase_project_id
+REACT_APP_FIREBASE_API_KEY=your_firebase_web_api_key
 ```
 
-Redeploy on Vercel after adding the variables.
+7. Redeploy on Vercel after adding the variables.
+
+For this prototype, Firestore rules must allow public read/write to the `articles` collection:
+
+```text
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /articles/{articleId} {
+      allow read, write: if true;
+    }
+  }
+}
+```
 
 Note: the admin PIN is a frontend prototype guard, not production-grade security. For a real public writing platform, replace it with backend authentication and private image storage.
