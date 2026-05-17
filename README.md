@@ -23,6 +23,8 @@ Open http://localhost:3000 in your browser.
 
 Articles added in one browser only appear on another device after you connect a shared database. The app supports Supabase through Vercel environment variables.
 
+Vercel hosts the React website. Supabase stores the articles so laptop and phone visitors see the same posts.
+
 Create a Supabase table named `articles` with these columns:
 
 ```sql

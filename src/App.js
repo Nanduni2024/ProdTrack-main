@@ -161,7 +161,9 @@ function App() {
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPin, setAdminPin] = useState("");
   const [storageStatus, setStorageStatus] = useState(
-    cloudStorageEnabled() ? "Connecting to cloud articles..." : "Local browser storage"
+    cloudStorageEnabled()
+      ? "Connecting to shared cloud articles..."
+      : "This device only. Add Supabase on Vercel to share posts."
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -180,7 +182,7 @@ function App() {
         setStorageStatus("Cloud sync active");
       } catch {
         if (!ignore) {
-          setStorageStatus("Cloud unavailable, using this browser");
+          setStorageStatus("Cloud unavailable. Showing this device only.");
         }
       }
     }
@@ -255,7 +257,7 @@ function App() {
         });
         setStorageStatus("Article published to cloud");
       } catch {
-        setStorageStatus("Cloud save failed, saved in this browser");
+        setStorageStatus("Cloud save failed. Saved on this device only.");
       }
     }
 
@@ -274,7 +276,7 @@ function App() {
         });
         setStorageStatus("Article deleted from cloud");
       } catch {
-        setStorageStatus("Cloud delete failed, removed in this browser");
+        setStorageStatus("Cloud delete failed. Removed on this device only.");
       }
     }
 

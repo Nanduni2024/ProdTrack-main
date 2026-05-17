@@ -551,6 +551,11 @@ textarea:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: 420px;
   }
+
+  .story-stage,
+  .empty-state {
+    order: -1;
+  }
 }
 
 @media (max-width: 680px) {
@@ -566,7 +571,47 @@ textarea:focus {
   }
 
   .article-list {
-    max-height: 360px;
+    max-height: 260px;
+  }
+
+  .story-rail {
+    padding: 10px;
+  }
+
+  .search-box input {
+    min-height: 38px;
+  }
+
+  .rail-heading {
+    margin: 12px 0 8px;
+  }
+
+  .sync-badge {
+    font-size: 12px;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+  }
+
+  .article-card {
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .article-card strong {
+    display: -webkit-box;
+    font-size: 20px;
+    line-height: 1.08;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .article-card small {
+    display: -webkit-box;
+    font-size: 14px;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
 
   .topbar {
@@ -588,11 +633,12 @@ textarea:focus {
   }
 
   .hero-image {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 16 / 10;
   }
 
   h1 {
-    font-size: 40px;
+    font-size: 34px;
+    line-height: 1.02;
   }
 
   .lede,
