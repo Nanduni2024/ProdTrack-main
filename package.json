@@ -10,13 +10,13 @@
     "eject": "react-scripts eject"
   },
   "dependencies": {
+    "firebase": "^12.13.0",
     "framer-motion": "12.33.0",
     "lucide-react": "0.563.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "react-scripts": "5.0.1"
   },
-  "devDependencies": {},
   "browserslist": {
     "production": [
       ">0.2%",

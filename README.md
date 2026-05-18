@@ -45,14 +45,20 @@ After Firebase is configured, importing posts also syncs them to Firestore.
 3. Add a Web app.
 4. Create a Firestore database.
 5. Create a collection named `articles`.
-6. In Vercel, add these Environment Variables:
+6. In Vercel, add these Environment Variables from your Firebase Web app config:
 
 ```text
-REACT_APP_FIREBASE_PROJECT_ID=your_firebase_project_id
 REACT_APP_FIREBASE_API_KEY=your_firebase_web_api_key
+REACT_APP_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+REACT_APP_FIREBASE_PROJECT_ID=your_firebase_project_id
+REACT_APP_FIREBASE_STORAGE_BUCKET=your_project_id.firebasestorage.app
+REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
+REACT_APP_FIREBASE_APP_ID=your_firebase_app_id
 ```
 
 7. Redeploy on Vercel after adding the variables.
+
+For local testing, copy `.env.example` to `.env.local`, paste your real Firebase values, then restart `npm run start`.
 
 For this prototype, Firestore rules must allow public read/write to the `articles` collection:
 

@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc,
+  writeBatch
+} from "firebase/firestore";
+import {
   BookOpen,
   CalendarDays,
   Cloud,
@@ -17,13 +25,10 @@ import {
   Upload,
   UserRound
 } from "lucide-react";
+import { db, firebaseConfigured } from "./firebase";
 
 const STORAGE_KEY = "prodtrack_articles";
-const FIREBASE_PROJECT_ID = process.env.REACT_APP_FIREBASE_PROJECT_ID;
-const FIREBASE_API_KEY = process.env.REACT_APP_FIREBASE_API_KEY;
-const FIREBASE_ARTICLES_ENDPOINT = FIREBASE_PROJECT_ID
-  ? `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/articles`
-  : "";
+const ARTICLES_COLLECTION = "articles";
 
 const starterArticles = [
   {
@@ -84,10 +89,6 @@ function saveStoredArticles(articles) {
   }
 }
 
-function cloudStorageEnabled() {
-  return Boolean(FIREBASE_PROJECT_ID && FIREBASE_API_KEY);
-}
-
 function normalizeArticle(article) {
   return {
     id: article.id,
@@ -103,61 +104,11 @@ function normalizeArticle(article) {
   };
 }
 
-function toFirestoreFields(article) {
-  return {
-    id: { stringValue: article.id || "" },
-    title: { stringValue: article.title || "" },
-    category: { stringValue: article.category || "" },
-    author: { stringValue: article.author || "" },
-    excerpt: { stringValue: article.excerpt || "" },
-    body: { stringValue: article.body || "" },
-    image: { stringValue: article.image || "" },
-    createdAt: { timestampValue: article.createdAt || new Date().toISOString() },
-    readTime: { stringValue: article.readTime || "" },
-    featured: { booleanValue: Boolean(article.featured) }
-  };
-}
-
-function fromFirestoreDocument(document) {
-  const fields = document.fields || {};
-
+function articleFromSnapshot(snapshot) {
   return normalizeArticle({
-    id: fields.id?.stringValue || document.name?.split("/").pop(),
-    title: fields.title?.stringValue,
-    category: fields.category?.stringValue,
-    author: fields.author?.stringValue,
-    excerpt: fields.excerpt?.stringValue,
-    body: fields.body?.stringValue,
-    image: fields.image?.stringValue,
-    createdAt: fields.createdAt?.timestampValue || fields.createdAt?.stringValue,
-    readTime: fields.readTime?.stringValue,
-    featured: fields.featured?.booleanValue
+    id: snapshot.id,
+    ...snapshot.data()
   });
-}
-
-function firebaseUrl(path = "") {
-  const separator = path.includes("?") ? "&" : "?";
-  return `${FIREBASE_ARTICLES_ENDPOINT}${path}${separator}key=${FIREBASE_API_KEY}`;
-}
-
-async function requestFirebase(path = "", options = {}) {
-  const response = await fetch(firebaseUrl(path), {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {})
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Firebase request failed with ${response.status}`);
-  }
-
-  if (response.status === 204) {
-    return null;
-  }
-
-  return response.json();
 }
 
 function formatDate(value) {
@@ -210,39 +161,38 @@ function App() {
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPin, setAdminPin] = useState("");
   const [storageStatus, setStorageStatus] = useState(
-    cloudStorageEnabled()
+    firebaseConfigured()
       ? "Connecting to Firebase articles..."
       : "This device only. Add Firebase on Vercel to share posts."
   );
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!cloudStorageEnabled()) return;
+    if (!firebaseConfigured() || !db) return undefined;
 
-    let ignore = false;
-
-    async function loadCloudArticles() {
-      try {
-        const data = await requestFirebase("");
-        if (ignore) return;
-        const nextArticles = (data.documents || [])
-          .map(fromFirestoreDocument)
+    const articlesRef = collection(db, ARTICLES_COLLECTION);
+    const unsubscribe = onSnapshot(
+      articlesRef,
+      (snapshot) => {
+        const nextArticles = snapshot.docs
+          .map(articleFromSnapshot)
           .sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
+
         setArticles(nextArticles.length ? nextArticles : starterArticles);
-        setSelectedId(nextArticles[0]?.id || starterArticles[0].id);
+        setSelectedId(
+          (currentId) =>
+            nextArticles.find((article) => article.id === currentId)?.id ||
+            nextArticles[0]?.id ||
+            starterArticles[0].id
+        );
         setStorageStatus("Firebase sync active");
-      } catch {
-        if (!ignore) {
-          setStorageStatus("Firebase unavailable. Showing this device only.");
-        }
+      },
+      () => {
+        setStorageStatus("Firebase unavailable. Showing this device only.");
       }
-    }
+    );
 
-    loadCloudArticles();
-
-    return () => {
-      ignore = true;
-    };
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -308,12 +258,9 @@ function App() {
 
     setIsSaving(true);
 
-    if (cloudStorageEnabled()) {
+    if (firebaseConfigured() && db) {
       try {
-        await requestFirebase(`/${encodeURIComponent(article.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ fields: toFirestoreFields(article) })
-        });
+        await setDoc(doc(db, ARTICLES_COLLECTION, article.id), article);
         setStorageStatus("Article published to Firebase");
       } catch {
         setStorageStatus("Firebase save failed. Saved on this device only.");
@@ -328,11 +275,9 @@ function App() {
   }
 
   async function deleteArticle(id) {
-    if (cloudStorageEnabled()) {
+    if (firebaseConfigured() && db) {
       try {
-        await requestFirebase(`/${encodeURIComponent(id)}`, {
-          method: "DELETE"
-        });
+        await deleteDoc(doc(db, ARTICLES_COLLECTION, id));
         setStorageStatus("Article deleted from Firebase");
       } catch {
         setStorageStatus("Firebase delete failed. Removed on this device only.");
@@ -379,21 +324,18 @@ function App() {
         (first, second) => new Date(second.createdAt) - new Date(first.createdAt)
       );
 
-      if (cloudStorageEnabled()) {
-        await Promise.all(
-          importedArticles.map((article) =>
-            requestFirebase(`/${encodeURIComponent(article.id)}`, {
-              method: "PATCH",
-              body: JSON.stringify({ fields: toFirestoreFields(article) })
-            })
-          )
-        );
+      if (firebaseConfigured() && db) {
+        const batch = writeBatch(db);
+        importedArticles.forEach((article) => {
+          batch.set(doc(db, ARTICLES_COLLECTION, article.id), article);
+        });
+        await batch.commit();
       }
 
       setArticles(nextArticles);
       setSelectedId(nextArticles[0]?.id || "");
       setStorageStatus(
-        cloudStorageEnabled()
+        firebaseConfigured()
           ? "Imported posts and synced to Firebase"
           : "Imported posts on this device"
       );
